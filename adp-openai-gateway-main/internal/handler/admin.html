@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>网关 API Key 管理</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f6f8; color: #1f2329; padding: 32px 16px; }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { color: #86909c; font-size: 13px; margin-bottom: 24px; }
+  .card { background: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.06); margin-bottom: 20px; }
+  .card h2 { font-size: 15px; margin-bottom: 12px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  input[type=text], input[type=password] { border: 1px solid #dcdfe6; border-radius: 6px; padding: 8px 10px; font-size: 14px; outline: none; }
+  input[type=text]:focus, input[type=password]:focus { border-color: #4a7dff; }
+  .in-name { width: 160px; } .in-note { flex: 1; min-width: 160px; }
+  button { border: none; border-radius: 6px; padding: 8px 16px; font-size: 14px; cursor: pointer; background: #4a7dff; color: #fff; }
+  button:hover { opacity: .9; }
+  button.ghost { background: #f2f3f5; color: #1f2329; }
+  button.danger { background: #fff; color: #e34d59; border: 1px solid #f3b2b7; }
+  button.mini { padding: 4px 10px; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #f0f1f3; vertical-align: middle; }
+  th { color: #86909c; font-weight: 500; white-space: nowrap; }
+  .key { font-family: Consolas, Menlo, monospace; font-size: 12px; color: #4a7dff; cursor: pointer; user-select: all; }
+  .key:hover { text-decoration: underline; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+  .on { background: #e8f7ef; color: #00a854; }
+  .off { background: #f7f7f7; color: #86909c; }
+  .muted { color: #86909c; font-size: 12px; }
+  .toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #1f2329; color: #fff; padding: 8px 18px; border-radius: 6px; font-size: 13px; display: none; z-index: 99; }
+  #login { max-width: 320px; margin: 80px auto; }
+  #login input { width: 100%; margin-bottom: 12px; }
+  #login button { width: 100%; }
+  .err { color: #e34d59; font-size: 13px; margin-top: 8px; display: none; }
+  .editbox { display: none; margin-top: 6px; }
+  td .row { gap: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <div id="login" class="card">
+    <h2>管理员登录</h2>
+    <input type="password" id="pwd" placeholder="管理员密码（.env ADMIN_PASSWORD）" onkeydown="if(event.key==='Enter')login()">
+    <button onclick="login()">登 录</button>
+    <div class="err" id="loginErr">密码错误</div>
+  </div>
+
+  <div id="panel" style="display:none">
+    <h1>网关 API Key 管理</h1>
+    <div class="sub">ADP-OpenAI Gateway · key 立即生效，无需重启网关 <a href="#" onclick="logout()" style="color:#4a7dff">退出登录</a></div>
+
+    <div class="card">
+      <h2>新增 Key</h2>
+      <div class="row">
+        <input type="text" class="in-name" id="newName" placeholder="名称（如：张三）">
+        <input type="text" class="in-note" id="newNote" placeholder="备注（可选，如：客户端接入用途）">
+        <button onclick="addKey()">生成新 Key</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Key 列表</h2>
+      <table>
+        <thead><tr><th>Key（点击复制）</th><th>名称</th><th>备注</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 1800);
+}
+async function api(method, url, body) {
+  const resp = await fetch(url, {
+    method, headers: {'Content-Type': 'application/json'},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (resp.status === 401) { showLogin(); throw new Error('未登录'); }
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || '请求失败');
+  return data;
+}
+function showLogin() {
+  document.getElementById('login').style.display = 'block';
+  document.getElementById('panel').style.display = 'none';
+}
+async function login() {
+  document.getElementById('loginErr').style.display = 'none';
+  try {
+    await api('POST', '/admin/api/login', {password: document.getElementById('pwd').value});
+    await boot();
+  } catch (e) { document.getElementById('loginErr').style.display = 'block'; }
+}
+async function logout() { try { await api('POST', '/admin/api/logout'); } catch (e) {} showLogin(); }
+async function boot() {
+  await api('GET', '/admin/api/keys');
+  document.getElementById('login').style.display = 'none';
+  document.getElementById('panel').style.display = 'block';
+  loadList();
+}
+async function loadList() {
+  const data = await api('GET', '/admin/api/keys');
+  render(data.keys || []);
+}
+function render(keys) {
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = '';
+  if (!keys.length) { tbody.innerHTML = '<tr><td colspan="6" class="muted">还没有 key，先在上面生成一个</td></tr>'; return; }
+  keys.forEach(k => {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td><span class="key" title="点击复制" data-k="' + k.key + '">' + k.key + '</span></td>' +
+      '<td>' + esc(k.name) + '</td>' +
+      '<td>' + (k.note ? esc(k.note) : '<span class="muted">—</span>') + '</td>' +
+      '<td><span class="tag ' + (k.enabled ? 'on">启用' : 'off">停用') + '</span></td>' +
+      '<td class="muted">' + (k.created_at || '').replace('T', ' ').slice(0, 16) + '</td>' +
+      '<td><div class="row">' +
+        '<button class="mini ghost" onclick="toggle(\'' + k.key + '\',' + (!k.enabled) + ')">' + (k.enabled ? '停用' : '启用') + '</button>' +
+        '<button class="mini ghost" onclick="edit(\'' + k.key + '\')">编辑</button>' +
+        '<button class="mini danger" onclick="del(\'' + k.key + '\',\'' + esc(k.name) + '\')">删除</button>' +
+      '</div><div class="editbox" id="edit-' + k.key + '"><div class="row">' +
+        '<input type="text" class="in-name" id="ename-' + k.key + '" value="' + esc(k.name) + '" placeholder="名称">' +
+        '<input type="text" class="in-note" id="enote-' + k.key + '" value="' + esc(k.note || '') + '" placeholder="备注">' +
+        '<button class="mini" onclick="save(\'' + k.key + '\')">保存</button>' +
+        '<button class="mini ghost" onclick="closeEdit(\'' + k.key + '\')">取消</button>' +
+      '</div></div></td>';
+    tbody.appendChild(tr);
+  });
+  document.querySelectorAll('.key').forEach(el =>
+    el.onclick = () => { navigator.clipboard.writeText(el.dataset.k); toast('已复制：' + el.dataset.k); });
+}
+function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function closeEdit(k) { document.getElementById('edit-' + k).style.display = 'none'; }
+async function addKey() {
+  try {
+    const data = await api('POST', '/admin/api/keys', {name: document.getElementById('newName').value, note: document.getElementById('newNote').value});
+    document.getElementById('newName').value = ''; document.getElementById('newNote').value = '';
+    await loadList();
+    toast('已生成：' + data.key.key + '（请立即复制分发给同事）');
+  } catch (e) { toast(e.message); }
+}
+async function toggle(k, enabled) {
+  try { await api('PUT', '/admin/api/keys/' + k, {enabled}); await loadList(); toast(enabled ? '已启用' : '已停用'); }
+  catch (e) { toast(e.message); }
+}
+function edit(k) {
+  const box = document.getElementById('edit-' + k);
+  box.style.display = box.style.display === 'block' ? 'none' : 'block';
+}
+async function save(k) {
+  try {
+    await api('PUT', '/admin/api/keys/' + k, {name: document.getElementById('ename-' + k).value, note: document.getElementById('enote-' + k).value});
+    await loadList(); toast('已保存');
+  } catch (e) { toast(e.message); }
+}
+async function del(k, name) {
+  if (!confirm('确认删除 key（' + name + '）？删除后使用该 key 的客户端将立即鉴权失败。')) return;
+  try { await api('DELETE', '/admin/api/keys/' + k); await loadList(); toast('已删除'); }
+  catch (e) { toast(e.message); }
+}
+(async () => {
+  try { await boot(); } catch (e) { /* 未登录 */ }
+})();
+</script>
+</body>
+</html>
