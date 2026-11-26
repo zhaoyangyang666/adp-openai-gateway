@@ -1,16 +1,29 @@
-# OS 垃圾文件
-Thumbs.db
-Desktop.ini
-.DS_Store
+# 编译产物
+adp-openai-gateway
+dist/
+*.exe
+adp-gateway-linux-amd64
 
-# 日志与临时文件
+# 配置文件（包含敏感信息）
+.env
+config.env
+
+# 网关 key 存储（含真实 key）
+gateway-keys.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+._*
+Thumbs.db
+
+# 日志
 *.log
-*.tmp
-*.exe~
 
 # WorkBuddy 工作区本地数据（含内部工作记录，不入库）
 .workbuddy/
-
-# 编辑器/工具本地状态
-.idea/
-.vscode/
